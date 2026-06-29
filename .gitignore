@@ -1,9 +1,9 @@
-.anchor
+target/
+.anchor/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
 .DS_Store
-target
-**/*.rs.bk
-node_modules
-test-ledger
-.yarn
-.surfpool
-
