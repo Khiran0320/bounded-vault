@@ -1,6 +1,6 @@
 # Bounded-Vault
 
-A bounded autonomy architecture for decentralized capital allocation, developed in partnership with Fineqia.
+A bounded autonomy architecture for decentralized capital allocation.
 
 ## Project Overview
 
