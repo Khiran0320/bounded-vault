@@ -1,0 +1,3 @@
+# Snapshot parquet files are regeneratable from the manifest and live APIs.
+# Keep manifests in git for reproducibility, exclude the data blobs.
+*.parquet

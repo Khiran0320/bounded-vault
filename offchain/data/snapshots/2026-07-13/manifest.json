@@ -1,0 +1,32 @@
+{
+  "adapters": {
+    "LENDING": {
+      "apy_first": "2026-02-27",
+      "apy_last": "2026-07-13",
+      "apy_rows": 137,
+      "coingecko_id": "usd-coin",
+      "llama_chain": "Solana",
+      "llama_project": "jupiter-lend",
+      "llama_symbol": "USDC",
+      "pool_id": "d783c8df-e2ed-44b4-8317-161ccc1b5f06",
+      "returns_first": "2025-07-15",
+      "returns_last": "2026-07-13",
+      "returns_rows": 364
+    },
+    "LIQUID_STAKING": {
+      "apy_first": "2025-03-26",
+      "apy_last": "2026-07-13",
+      "apy_rows": 475,
+      "coingecko_id": "solana",
+      "llama_chain": "Solana",
+      "llama_project": "jito-liquid-staking",
+      "llama_symbol": "JITOSOL",
+      "pool_id": "0e7d0722-9054-4907-8593-567b353c0900",
+      "returns_first": "2025-07-15",
+      "returns_last": "2026-07-13",
+      "returns_rows": 364
+    }
+  },
+  "fetch_utc": "2026-07-13T13:19:18.649975+00:00",
+  "history_days_requested": 365
+}
