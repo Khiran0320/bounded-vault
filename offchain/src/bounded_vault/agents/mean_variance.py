@@ -6,7 +6,15 @@ proportionally to yield and ignores risk entirely, this agent trades
 expected return against covariance, so it will hold a stable adapter even
 when a volatile one advertises more yield.
 
-Expected return per adapter is annualised price drift plus current APY.
+Expected return per adapter is current APY plus shrunk annualised price
+drift. The shrinkage is a Bayesian posterior mean under a zero-centred
+prior on true drift with standard deviation tau, which discards drift
+estimates in proportion to how imprecisely they were measured. Over a
+sixty day window the standard error on an annualised drift estimate for a
+volatile asset is an order of magnitude larger than its yield, so the raw
+estimate is noise and the shrinkage removes it automatically rather than by
+a hand-picked multiplier.
+
 Covariance is estimated from price returns alone, since daily yield accrual
 carries no meaningful variance over a one day horizon.
 """
@@ -83,6 +91,13 @@ class MeanVarianceAgent(Agent):
     propose allocations the constraint layer refuses. Set to the vault's
     actual cap, the agent self-constrains. Running both configurations
     isolates the effect of duplicating a safety constraint inside an agent.
+
+    tau is the prior standard deviation on true annualised drift, set from
+    economic reasoning and never fitted to the sample. A value of 0.15
+    states a belief that drift lies within roughly plus or minus thirty
+    percent a year before any data is observed. Passing None disables
+    shrinkage and uses raw drift, retained only so the estimator families
+    can be compared as a sensitivity analysis.
     """
 
     def __init__(
@@ -90,6 +105,7 @@ class MeanVarianceAgent(Agent):
         risk_aversion: float = 3.0,
         lookback_days: int = 60,
         max_strategy_bps: int | None = None,
+        tau: float | None = 0.15,
         ridge: float = 1e-8,
         name: str = "mean_variance",
     ) -> None:
@@ -99,22 +115,45 @@ class MeanVarianceAgent(Agent):
             raise ValueError(f"lookback_days must be at least 2, got {lookback_days}")
         if max_strategy_bps is not None and not 0 < max_strategy_bps <= BPS_DENOMINATOR:
             raise ValueError(f"max_strategy_bps out of range: {max_strategy_bps}")
+        if tau is not None and tau < 0.0:
+            raise ValueError(f"tau must be non-negative, got {tau}")
 
         self.name = name
         self.risk_aversion = risk_aversion
         self.lookback_days = lookback_days
         self.max_strategy_bps = max_strategy_bps
+        self.tau = tau
         self.ridge = ridge
+
+    def _shrinkage(self, standard_errors: np.ndarray) -> np.ndarray:
+        """Posterior weight on the observed drift, per adapter.
+
+        Under a zero-centred normal prior with standard deviation tau and a
+        drift estimate of standard error se, the posterior mean places
+        tau^2 / (tau^2 + se^2) of its weight on the observation. Precisely
+        measured drift survives, imprecisely measured drift does not.
+        """
+        if self.tau is None:
+            return np.ones_like(standard_errors)
+        if self.tau == 0.0:
+            return np.zeros_like(standard_errors)
+        tau_sq = self.tau**2
+        return tau_sq / (tau_sq + standard_errors**2)
 
     def _estimate(
         self, market: MarketView
-    ) -> tuple[list[AdapterId], np.ndarray, np.ndarray]:
+    ) -> tuple[list[AdapterId], np.ndarray, np.ndarray, dict[str, np.ndarray]]:
         """Build the annualised expected return vector and covariance matrix."""
         columns = _column_map(market.returns)
         adapters = list(columns)
         labels = [columns[adapter] for adapter in adapters]
 
-        window = market.returns[labels].tail(self.lookback_days)
+        # Drop incomplete rows before slicing, so every adapter is estimated
+        # over an identical window. Pairwise deletion inside pandas.cov can
+        # otherwise return a matrix that is not positive semidefinite, which
+        # psd_wrap would accept without complaint.
+        frame = market.returns[labels].dropna()
+        window = frame.tail(self.lookback_days)
         if len(window) < 2:
             raise ValueError(
                 f"need at least 2 observations to estimate covariance, "
@@ -125,13 +164,28 @@ class MeanVarianceAgent(Agent):
         if missing:
             raise KeyError(f"no yield supplied for {missing}")
 
-        drift = window.mean().to_numpy(dtype=float) * DAYS_PER_YEAR
-        apy = np.array([float(market.yields[a]) for a in adapters])
-        mu = drift + apy
-
         sigma = window.cov().to_numpy(dtype=float) * DAYS_PER_YEAR
+
+        # Standard error on an annualised mean scales with elapsed calendar
+        # time, not observation count, so sampling more often within a fixed
+        # window would not improve it.
+        years = len(window) / DAYS_PER_YEAR
+        volatility = np.sqrt(np.clip(np.diag(sigma), 0.0, None))
+        standard_errors = volatility / np.sqrt(years)
+
+        drift = window.mean().to_numpy(dtype=float) * DAYS_PER_YEAR
+        keep = self._shrinkage(standard_errors)
+        apy = np.array([float(market.yields[a]) for a in adapters])
+        mu = keep * drift + apy
+
         sigma = sigma + np.eye(len(adapters)) * self.ridge
-        return adapters, mu, sigma
+        diagnostics = {
+            "drift": drift,
+            "standard_errors": standard_errors,
+            "keep": keep,
+            "apy": apy,
+        }
+        return adapters, mu, sigma, diagnostics
 
     def _solve(self, mu: np.ndarray, sigma: np.ndarray) -> tuple[np.ndarray, str]:
         """Solve the quadratic program, falling back to equal weight on failure.
@@ -174,10 +228,10 @@ class MeanVarianceAgent(Agent):
         return solution / total, str(problem.status)
 
     def propose(self, market: MarketView) -> Proposal:
-        adapters, mu, sigma = self._estimate(market)
+        adapters, mu, sigma, diagnostics = self._estimate(market)
         solution, status = self._solve(mu, sigma)
 
-       # to_basis_points is positional, so the adapter ordering from
+        # to_basis_points is positional, so the adapter ordering from
         # _estimate must be preserved when zipping the result back.
         bps = dict(
             zip(adapters, to_basis_points([float(w) for w in solution]))
@@ -185,13 +239,23 @@ class MeanVarianceAgent(Agent):
         if self.max_strategy_bps is not None:
             bps = _enforce_cap(bps, self.max_strategy_bps)
 
-        expected = ", ".join(
-            f"{a.name}={m:.4f}" for a, m in zip(adapters, mu)
+        estimates = ", ".join(
+            f"{adapter.name}[mu={m:.4f} apy={a:.4f} drift={d:.4f} "
+            f"se={s:.4f} keep={k:.4f}]"
+            for adapter, m, a, d, s, k in zip(
+                adapters,
+                mu,
+                diagnostics["apy"],
+                diagnostics["drift"],
+                diagnostics["standard_errors"],
+                diagnostics["keep"],
+            )
         )
+        tau_label = "none" if self.tau is None else f"{self.tau}"
         rationale = (
             f"mean-variance, risk_aversion={self.risk_aversion}, "
-            f"lookback={self.lookback_days}d, status={status}, "
-            f"annualised expected return: {expected}"
+            f"lookback={self.lookback_days}d, tau={tau_label}, "
+            f"status={status}, {estimates}"
         )
 
         return Proposal(
