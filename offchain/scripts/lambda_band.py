@@ -17,7 +17,8 @@ import cvxpy as cp
 from bounded_vault.schema import AdapterId
 
 # ADJUST THIS IMPORT to match your snapshots module path.
-from bounded_vault.data.snapshots import load_snapshot_market_view
+from bounded_vault.market.snapshots import load_snapshot, view_at
+from bounded_vault.agents.mean_variance import MeanVarianceAgent
 
 SNAPSHOT_DATE = "2026-07-13"
 TAU = 0.15
@@ -25,37 +26,34 @@ PER_STRATEGY_CAP_BPS = 6000
 DAYS_PER_YEAR = 365
 LAMBDA_GRID = [0.1, 0.15, 0.2, 0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0]
 
-ORDER = [AdapterId.LENDING, AdapterId.LIQUID_STAKING]
-LABELS = ["LENDING", "LIQUID_STAKING"]
 
+# def build_inputs(view):
+#     """Return (mu, sigma, diagnostics) annualised, ordered by ORDER."""
+#     returns = view.returns[[*ORDER]].dropna()
+#     n_obs = len(returns)
+#     years = n_obs / DAYS_PER_YEAR
 
-def build_inputs(view):
-    """Return (mu, sigma, diagnostics) annualised, ordered by ORDER."""
-    returns = view.returns[[*ORDER]].dropna()
-    n_obs = len(returns)
-    years = n_obs / DAYS_PER_YEAR
+#     sigma = returns.cov().values * DAYS_PER_YEAR
+#     vol_annual = np.sqrt(np.diag(sigma))
 
-    sigma = returns.cov().values * DAYS_PER_YEAR
-    vol_annual = np.sqrt(np.diag(sigma))
+#     drift_annual = returns.mean().values * DAYS_PER_YEAR
+#     se_annual = vol_annual / np.sqrt(years)
 
-    drift_annual = returns.mean().values * DAYS_PER_YEAR
-    se_annual = vol_annual / np.sqrt(years)
+#     k = TAU**2 / (TAU**2 + se_annual**2)
+#     apy = np.array([float(view.yields[a]) for a in ORDER])
 
-    k = TAU**2 / (TAU**2 + se_annual**2)
-    apy = np.array([float(view.yields[a]) for a in ORDER])
+#     mu = k * drift_annual + apy
 
-    mu = k * drift_annual + apy
-
-    diagnostics = {
-        "n_obs": n_obs,
-        "years": years,
-        "vol_annual": vol_annual,
-        "drift_annual": drift_annual,
-        "se_annual": se_annual,
-        "k": k,
-        "apy": apy,
-    }
-    return mu, sigma, diagnostics
+#     diagnostics = {
+#         "n_obs": n_obs,
+#         "years": years,
+#         "vol_annual": vol_annual,
+#         "drift_annual": drift_annual,
+#         "se_annual": se_annual,
+#         "k": k,
+#         "apy": apy,
+#     }
+#     return mu, sigma, diagnostics
 
 
 def solve(mu, sigma, lam):
@@ -91,21 +89,23 @@ def bisect_boundary(mu, sigma, lo, hi, tol=1e-4):
 
 
 def main():
-    view = load_snapshot_market_view(SNAPSHOT_DATE)
-    mu, sigma, d = build_inputs(view)
+    snapshot = load_snapshot(SNAPSHOT_DATE)
+    view = view_at(snapshot, snapshot.dates[-1])
+    agent = MeanVarianceAgent(tau=TAU)
+    adapters, mu, sigma, d = agent._estimate(view)
+    n_obs = min(len(view.returns.dropna()), agent.lookback_days) 
+    print(f"Observations: {n_obs} ({n_obs / 365:.3f} years)")
 
     print(f"Snapshot: {SNAPSHOT_DATE}")
-    print(f"Observations: {d['n_obs']} ({d['years']:.3f} years)")
     print(f"Tau: {TAU}   Per-strategy cap: {PER_STRATEGY_CAP_BPS} bps\n")
 
-    print(f"{'asset':<16}{'vol':>10}{'drift':>10}{'SE':>10}{'keep':>10}{'apy':>10}{'mu':>10}")
-    for i, label in enumerate(LABELS):
+    print(f"{'asset':<16}{'drift':>10}{'SE':>10}{'keep':>10}{'apy':>10}{'mu':>10}")
+    for i, adapter in enumerate(adapters):
         print(
-            f"{label:<16}"
-            f"{d['vol_annual'][i]:>10.4f}"
-            f"{d['drift_annual'][i]:>10.4f}"
-            f"{d['se_annual'][i]:>10.4f}"
-            f"{d['k'][i]:>10.4f}"
+            f"{adapter.name:<16}"
+            f"{d['drift'][i]:>10.4f}"
+            f"{d['standard_errors'][i]:>10.4f}"
+            f"{d['keep'][i]:>10.4f}"
             f"{d['apy'][i]:>10.4f}"
             f"{mu[i]:>10.4f}"
         )
