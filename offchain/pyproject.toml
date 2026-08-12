@@ -11,7 +11,12 @@ dependencies = [
     "pydantic>=2",
     "pydantic>=2",
     "pandas>=2",
+    "anthropic",
+    "python-dotenv",
+    "httpx",
+    "pyarrow",
 ]
+
 
 [project.optional-dependencies]
 dev = ["pytest"]
