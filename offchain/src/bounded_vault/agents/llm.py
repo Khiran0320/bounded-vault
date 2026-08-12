@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 from bounded_vault.agents.base import Agent
@@ -103,6 +104,7 @@ class LLMAgent(Agent):
         lookback_days: int = 60,
         cache_dir: Path | str = DEFAULT_CACHE,
         max_retries: int = 2,
+        retry_backoff: float = 2.0,
         name: str | None = None,
     ) -> None:
         self.constraint_context = constraint_context
@@ -110,6 +112,7 @@ class LLMAgent(Agent):
         self.lookback_days = lookback_days
         self.cache_dir = Path(cache_dir)
         self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
 
         config = "constrained" if constraint_context else "unconstrained"
         self.name = name or f"llm_{config}"
@@ -140,7 +143,22 @@ class LLMAgent(Agent):
 
     def _build_prompt(self, market: MarketView) -> str:
         adapters = self._adapters(market)
-        window = market.returns.tail(self.lookback_days)
+
+        # Drop incomplete rows before slicing, matching the window used by
+        # MeanVarianceAgent._estimate. Both agents must measure over an
+        # identical sample or a difference in their proposals is no longer
+        # attributable to allocation logic alone.
+        window = market.returns.dropna().tail(self.lookback_days)
+        if len(window) < 2:
+            raise ValueError(
+                f"need at least 2 observations to compute statistics, "
+                f"got {len(window)}"
+            )
+
+        # Standard error on an annualised mean scales with elapsed calendar
+        # time rather than observation count, so it is fixed by the window
+        # length and identical across adapters up to their volatility.
+        years = len(window) / DAYS_PER_YEAR
 
         lines = [
             f"Date: {market.as_of:%Y-%m-%d}",
@@ -154,6 +172,13 @@ class LLMAgent(Agent):
             series = window[column]
             volatility = float(series.std()) * (DAYS_PER_YEAR**0.5)
             drift = float(series.mean()) * DAYS_PER_YEAR
+
+            # Same expression as MeanVarianceAgent._estimate, which feeds it
+            # into tau^2 / (tau^2 + se^2) and discards drift mathematically.
+            # Agent 3 is handed the figure and left to reason about it, which
+            # is the comparison the two agents are meant to support.
+            standard_error = volatility / (years**0.5)
+
             context = ADAPTER_CONTEXT[adapter]
 
             lines.extend(
@@ -166,16 +191,28 @@ class LLMAgent(Agent):
                     f"  Risks: {context['risks']}",
                     f"  Current APY: {_fmt_pct(float(market.yields[adapter]))}",
                     f"  Annualised price volatility: {_fmt_pct(volatility)}",
-                    f"  Annualised price drift: {_fmt_pct(drift)}",
+                    f"  Annualised price drift: {_fmt_pct(drift)} "
+                    f"(standard error {_fmt_pct(standard_error)})",
                 ]
             )
 
+        # Stated as fact, without an instruction on what to conclude. Telling
+        # the model to disregard drift would import Agent 2's answer into
+        # Agent 3's prompt and make the comparison circular.
         lines.extend(
             [
                 "",
-                "Note on the drift figure: estimated from a short window, its "
-                "standard error is typically far larger than the APY, so it "
-                "carries little information about future returns.",
+                "Note on the drift figures: each is the sample mean of daily "
+                "price returns over the window above, annualised. The figure "
+                "in brackets is the standard error of that estimate, on the "
+                "same annualised scale. The standard error of a drift "
+                "estimate falls only with a longer calendar window, not with "
+                "more frequent sampling within it, so it cannot be reduced "
+                "with the data available here. Both figures are scaled "
+                "linearly from the daily mean, so a window containing a "
+                "sustained drawdown can annualise to below -100 percent. "
+                "That is a property of the scaling convention, not a "
+                "statement that the asset can lose more than its value.",
             ]
         )
 
@@ -282,6 +319,10 @@ class LLMAgent(Agent):
                     path.unlink()
                 if attempt == self.max_retries:
                     break
+                # Back off before retrying. A transient rate limit answered
+                # with immediate retries would exhaust them and record an
+                # equal-weight fallback, silently corrupting that day.
+                time.sleep(self.retry_backoff * (2**attempt))
 
         if weights is None:
             share = BPS_DENOMINATOR // len(adapters)
