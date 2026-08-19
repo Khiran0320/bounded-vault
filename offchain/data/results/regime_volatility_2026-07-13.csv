@@ -1,0 +1,12 @@
+run,calm_n,calm_ret,calm_vol,volatile_n,volatile_ret,volatile_vol
+benchmark_lending_only,65,0.0412,0.0026,65,0.0416,0.0018
+benchmark_equal_weight,65,-0.0052,0.1736,65,-0.2372,0.3483
+benchmark_liquid_staking_only,65,-0.0495,0.3473,65,-0.4416,0.6967
+rule_based,65,0.0248,0.1971,65,-0.2969,0.3906
+rule_based_unenforced,65,0.0459,0.2039,65,-0.3126,0.4002
+mean_variance,65,0.0,0.0,65,0.0,0.0
+mean_variance_unenforced,65,0.0481,0.007,65,0.0222,0.0077
+mean_variance_constrained,65,0.004,0.1389,65,-0.1882,0.2786
+llm_unconstrained,65,0.0,0.0,65,0.0,0.0
+llm_unconstrained_unenforced,65,0.0295,0.0472,65,-0.0988,0.0812
+llm_constrained,65,-0.0153,0.1435,65,-0.2533,0.2838

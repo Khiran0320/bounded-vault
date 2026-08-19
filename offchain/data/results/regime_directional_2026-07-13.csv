@@ -1,0 +1,12 @@
+run,rising_days,rising_ret,rising_vol,rising_dd,falling_days,falling_ret,falling_vol,falling_dd
+benchmark_lending_only,74,0.0076,0.002,0.0003,62,0.0076,0.0024,0.0003
+benchmark_equal_weight,74,0.0818,0.262,0.0906,62,-0.1046,0.2915,0.1954
+benchmark_liquid_staking_only,74,0.1458,0.5243,0.1773,62,-0.2157,0.5829,0.3589
+rule_based,74,0.0908,0.3065,0.1055,62,-0.1186,0.3167,0.2101
+rule_based_unenforced,74,0.091,0.3204,0.1156,62,-0.12,0.3173,0.2116
+mean_variance,74,0.0,0.0,0.0,62,0.0,0.0,0.0
+mean_variance_unenforced,74,0.0115,0.0075,0.0008,62,0.0016,0.0065,0.0028
+mean_variance_constrained,74,0.0677,0.2095,0.0726,62,-0.0821,0.2333,0.1587
+llm_unconstrained,74,0.0,0.0,0.0,62,0.0,0.0,0.0
+llm_unconstrained_unenforced,74,0.0228,0.066,0.0231,62,-0.0333,0.0645,0.0472
+llm_constrained,74,0.0545,0.2165,0.0726,62,-0.0879,0.2355,0.164

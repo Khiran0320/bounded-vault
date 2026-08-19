@@ -1,11 +1,14 @@
 """Live data loaders for market prices and lending APYs.
 
 Two sources, two purposes:
-- CoinGecko for historical price series (agent training, backtesting).
-- DeFiLlama for current pool APYs (input to rebalance proposals).
+- CoinGecko for historical price series (agent inputs, backtesting).
+- DeFiLlama for pool APYs (agent inputs, backtesting).
 
-Neither of these is the on-chain price path. On-chain vault validation
-uses Pyth. The two paths are deliberately kept separate.
+Both are off-chain only. The on-chain program consumes no price feed at
+all: every constraint it enforces is denominated in basis points and
+share counts rather than in currency, so there is nothing for an oracle
+to report and correspondingly no oracle manipulation surface. Prices
+enter the system only through this module, and only to evaluate agents.
 
 For the LIQUID_STAKING adapter, the price series is SOL, not the LST
 derivative. Rationale: LST market risk is essentially SOL exposure,

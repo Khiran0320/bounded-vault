@@ -12,7 +12,7 @@ dependencies = [
     "pandas>=2",
     "anthropic",
     "python-dotenv",
-    "httpx",
+    "requests",
     "pyarrow",
     "matplotlib",
 ]

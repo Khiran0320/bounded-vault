@@ -169,6 +169,7 @@ def main() -> None:
                 deployed = int((results["turnover"] > 0).sum())
                 record["deployed"] = deployed > 0
                 record["ann_vol"] = round(metrics["annualised_volatility"], 4)
+                record["sortino"] = round(metrics["sortino_ratio"], 3)
                 record["max_dd"] = round(metrics["max_drawdown"], 4)
                 record["turnover"] = round(metrics["mean_daily_turnover"], 5)
                 record["rejected"] = metrics["violation_count"]
