@@ -13,7 +13,7 @@ def test_weights_proportional_to_yield(two_adapter_market):
     assert weights[AdapterId.LENDING] == 2500
     assert weights[AdapterId.LIQUID_STAKING] == 7500
     assert proposal.total_bps == 10_000
-    assert proposal.agent_name == "rule-based"
+    assert proposal.agent_name == "rule_based"
 
 
 def test_equal_weight_when_no_yield_signal():

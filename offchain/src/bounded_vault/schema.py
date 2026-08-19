@@ -9,7 +9,7 @@ safety constraints are enforced. This file validates STRUCTURE only.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import IntEnum
 
 from pydantic import BaseModel, Field
@@ -28,10 +28,16 @@ class StrategyAllocation(BaseModel):
 
 
 class Proposal(BaseModel):
-    """The full opinion produced by one agent for one rebalance decision."""
+    """The full opinion produced by one agent for one rebalance decision.
+
+    as_of is required and carries no default. An agent that stamps a
+    proposal with wall clock time rather than simulated time produces an
+    unreproducible record, and a default_factory reading the real clock
+    would make that failure silent. Agents must take this from view.as_of.
+    """
     agent_name: str
     allocations: list[StrategyAllocation]
-    as_of: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    as_of: datetime
     rationale: str | None = None
 
     @property

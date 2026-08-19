@@ -33,7 +33,11 @@ class BacktestConfig:
     """Run parameters.
 
     warmup_days is applied to every agent, not just those that need it, so
-    that all agents are evaluated over an identical window.
+    that all agents are evaluated over an identical window. When a history
+    frame is supplied to run_backtest it should usually be zero, since the
+    snapshot loader already guarantees a full lookback behind every date it
+    marks usable and applying a warmup on top discards evaluation dates
+    twice for the same reason.
     """
 
     warmup_days: int = 60
@@ -96,11 +100,20 @@ def run_backtest(
     yields: pd.DataFrame,
     constraints: ConstraintConfig,
     config: BacktestConfig | None = None,
+    history: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Run one agent over one dataset and return the per day record.
 
     returns and yields are both indexed by date with AdapterId columns.
     yields holds APY as a fraction, not a percent.
+
+    history, when supplied, is the price history the agent's MarketView is
+    built from, while returns remains the frame supplying realised overnight
+    returns. The two differ because returns must share an index with yields,
+    which truncates it to the span where APY exists, whereas a lookback
+    window should see all the price data that genuinely preceded the
+    decision. Left as None, views are built from returns and behaviour is
+    unchanged. history must cover every date in returns.
 
     A rejected proposal leaves the previous weights in place, mirroring the
     on-chain behaviour where a failing transaction reverts and the vault is
@@ -114,6 +127,18 @@ def run_backtest(
 
     if set(returns.columns) != set(yields.columns):
         raise ValueError("returns and yields must cover the same adapters")
+
+    view_source = returns if history is None else history
+
+    if history is not None:
+        if set(history.columns) != set(returns.columns):
+            raise ValueError("history and returns must cover the same adapters")
+        missing = returns.index.difference(history.index)
+        if len(missing) > 0:
+            raise ValueError(
+                f"history omits {len(missing)} date(s) present in returns, "
+                f"first is {missing[0]}"
+            )
 
     # Maps each adapter to the label pandas actually stored, so lookups do
     # not depend on whether the enum survived frame construction.
@@ -139,7 +164,7 @@ def run_backtest(
         today = dates[i]
         tomorrow = dates[i + 1]
 
-        view = _build_view(returns.loc[:today], yields.loc[today], today)
+        view = _build_view(view_source.loc[:today], yields.loc[today], today)
         proposal = agent.propose(view)
 
         if pd.Timestamp(proposal.as_of) != pd.Timestamp(today):
@@ -181,10 +206,19 @@ def run_backtest(
                 "rejection_reason": reason.value if reason else None,
                 "turnover": traded,
                 "cost": cost,
+                # Proposed and executed weights are both recorded. They
+                # diverge on every rejected date, and the difference is the
+                # subject of the experiment: breach rates are a property of
+                # proposals, performance a property of what executed.
+                **{
+                    f"proposed_{adapter.name.lower()}_bps": proposed.get(adapter, 0)
+                    for adapter in adapters
+                },
                 **{
                     f"weight_{adapter.name.lower()}_bps": new_weights.get(adapter, 0)
                     for adapter in adapters
                 },
+                "rationale": proposal.rationale,
             }
         )
 

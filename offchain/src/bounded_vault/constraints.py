@@ -4,6 +4,11 @@ This module must stay behaviourally identical to validate_proposal in the
 Anchor program. The backtest uses it to determine whether a proposal would
 have been accepted on chain, so any divergence here silently invalidates
 the violation counts that the dissertation reports.
+
+Two deliberate divergences remain, both documented at their check site:
+NEGATIVE_WEIGHT has no on-chain counterpart because weights are u16, and
+ADAPTER_NOT_ALLOWED approximates a whitelist of CPI target program keys
+that has no representation in this layer.
 """
 
 from __future__ import annotations
@@ -31,7 +36,10 @@ class ViolationReason(str, Enum):
 class ConstraintConfig:
     """Vault safety parameters.
 
-    These must match the values stored in the on-chain Vault account.
+    These must match the values stored in the on-chain Vault account, where
+    max_strategy_bps appears as per_strategy_cap_bps and allowed_adapters
+    corresponds loosely to whitelisted_programs.
+
     require_exact_sum reflects the on-chain rule that weights sum to
     exactly BPS_DENOMINATOR. Setting it False is not an on-chain option;
     it exists so the backtest can run the counterfactual described below.
@@ -49,6 +57,12 @@ class ConstraintConfig:
         Returns False when exact-sum and a sub-total cap are both active,
         since no vector can sum to BPS_DENOMINATOR and stay under a lower
         ceiling. This is the known constraint composition conflict.
+
+        Note that this tests reachability from an unconstrained starting
+        point only. A second conflict exists that this cannot express: with
+        exact-sum active and a rebalance delta below BPS_DENOMINATOR / n,
+        no first rebalance away from a flat zero allocation is admissible,
+        even though steady-state adjustments remain legal.
         """
         if self.require_exact_sum and self.total_cap_bps < BPS_DENOMINATOR:
             return False
@@ -65,32 +79,51 @@ def validate_proposal(
 
     current_bps is the vault's existing allocation, used for the rebalance
     delta check. Pass None for the first rebalance, when there is no prior
-    position to move away from and the delta check does not apply.
+    position to move away from and the delta check does not apply. The
+    on-chain program has no equivalent of None and always compares against
+    the stored weights, so the two agree only once a position exists.
 
-    Checks run in the same order as the on-chain implementation so that
-    the reported reason matches what the program would emit.
+    Checks run in the order the on-chain implementation uses, so the
+    reported reason matches what the program would emit when a proposal
+    breaches more than one rule at once. Adapters are visited in enum
+    order, mirroring the fixed strategy array the program indexes over.
     """
-    for adapter, bps in proposed_bps.items():
-        if adapter not in config.allowed_adapters:
-            return False, ViolationReason.ADAPTER_NOT_ALLOWED
-        if bps < 0:
+    adapters = sorted(proposed_bps, key=int)
+
+    # No on-chain counterpart: weights are u16 and the pydantic schema
+    # already rejects negatives. Retained as a structural guard for
+    # proposals built outside the schema, and checked first so it cannot
+    # be masked by a later rule.
+    for adapter in adapters:
+        if proposed_bps[adapter] < 0:
             return False, ViolationReason.NEGATIVE_WEIGHT
-        if bps > config.max_strategy_bps:
-            return False, ViolationReason.STRATEGY_CAP_EXCEEDED
 
     total = sum(proposed_bps.values())
 
     if config.require_exact_sum and total != BPS_DENOMINATOR:
         return False, ViolationReason.WEIGHTS_NOT_EXACT
 
+    # Cap and delta share one pass, as they do on chain. A proposal that
+    # breaches the cap on a later adapter and the delta on an earlier one
+    # is therefore reported as a delta breach, matching the program.
+    for adapter in adapters:
+        bps = proposed_bps[adapter]
+
+        if bps > config.max_strategy_bps:
+            return False, ViolationReason.STRATEGY_CAP_EXCEEDED
+
+        if current_bps is not None:
+            delta = abs(bps - current_bps.get(adapter, 0))
+            if delta > config.max_rebalance_delta_bps:
+                return False, ViolationReason.REBALANCE_DELTA_EXCEEDED
+
     if total > config.total_cap_bps:
         return False, ViolationReason.TOTAL_CAP_EXCEEDED
 
-    if current_bps is not None:
-        adapters = set(current_bps) | set(proposed_bps)
-        for adapter in adapters:
-            delta = abs(proposed_bps.get(adapter, 0) - current_bps.get(adapter, 0))
-            if delta > config.max_rebalance_delta_bps:
-                return False, ViolationReason.REBALANCE_DELTA_EXCEEDED
+    # Approximates the on-chain whitelist of CPI target program keys, which
+    # this layer has no representation of. Checked last, as on chain.
+    for adapter in adapters:
+        if adapter not in config.allowed_adapters:
+            return False, ViolationReason.ADAPTER_NOT_ALLOWED
 
     return True, None

@@ -14,14 +14,24 @@ class RuleBasedAgent(Agent):
     The thesis is deliberately naive: put more capital where the yield is
     higher. No optimisation, no training, no parameters. This is the baseline
     the smarter agents are measured against.
+
+    name is overridable so the same agent can be run under more than one
+    constraint configuration without the two results colliding on one
+    output path. It affects labelling only, never the proposal itself.
     """
 
-    name = "rule-based"
+    name = "rule_based"
+
+    def __init__(self, name: str | None = None) -> None:
+        if name is not None:
+            self.name = name
 
     def propose(self, market: MarketView) -> Proposal:
         adapters = market.adapters
         if not adapters:
-            return Proposal(agent_name=self.name, allocations=[])
+            return Proposal(
+                agent_name=self.name, as_of=market.as_of, allocations=[]
+            )
 
         ylds = [max(market.yields.get(a, 0.0), 0.0) for a in adapters]
         total = sum(ylds)
@@ -38,4 +48,9 @@ class RuleBasedAgent(Agent):
             StrategyAllocation(adapter=a, weight_bps=b)
             for a, b in zip(adapters, bps)
         ]
-        return Proposal(agent_name=self.name, allocations=allocations, rationale=rationale)
+        return Proposal(
+            agent_name=self.name,
+            as_of=market.as_of,
+            allocations=allocations,
+            rationale=rationale,
+        )
