@@ -101,6 +101,7 @@ def run_backtest(
     constraints: ConstraintConfig,
     config: BacktestConfig | None = None,
     history: pd.DataFrame | None = None,
+    initial_weights: dict[AdapterId, int] | None = None,
 ) -> pd.DataFrame:
     """Run one agent over one dataset and return the per day record.
 
@@ -156,7 +157,31 @@ def run_backtest(
             f"in a {len(dates)} day series"
         )
 
-    current_weights: dict[AdapterId, int] | None = None
+    # The allocation the vault authority set at initialisation. Left as
+    # None the vault opens in cash, which is not what the chain does: a
+    # live Vault account always holds weights. The distinction only shows
+    # up under enforcement, where a vault opening in cash and refused on
+    # its first proposal never deploys at all, and its zero return then
+    # describes the opening condition rather than the agent or the cap.
+    #
+    # A seed makes the first date's rebalance delta check active, where an
+    # unseeded run skips it for want of a prior position. With the delta
+    # left at the denominator that check is inert, but tightening it later
+    # would change first-date behaviour between the two paths.
+    if initial_weights is None:
+        seed: dict[AdapterId, int] | None = None
+    else:
+        unknown = set(initial_weights) - set(adapters)
+        if unknown:
+            raise ValueError(f"initial_weights names unknown adapters: {unknown}")
+        seed = {adapter: int(initial_weights.get(adapter, 0)) for adapter in adapters}
+        admissible, refusal = validate_proposal(seed, None, constraints)
+        if not admissible:
+            raise ValueError(
+                f"initial_weights would be refused on chain: {refusal.value}"
+            )
+
+    current_weights: dict[AdapterId, int] | None = seed
     value = config.initial_value
     rows = []
 
