@@ -31,4 +31,7 @@ pub enum VaultError {
 
     #[msg("Insufficient shares to withdraw")]
     InsufficientShares,
+
+    #[msg("A strategy adapter appears more than once in the proposal")]
+    DuplicateAdapter,
 }

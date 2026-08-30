@@ -7,6 +7,15 @@ use crate::{
 };
 use super::adapters;
 
+/// One leg of a proposed allocation.
+///
+/// current_weight_bps is supplied by the caller rather than read from the
+/// vault, because the vault does not persist its allocation vector. The
+/// rebalance delta constraint is therefore self-attested: an adversarial
+/// caller can defeat it by reporting a convenient current allocation. The
+/// per-strategy cap, the uniqueness rule, the exact-sum rule and the
+/// whitelist are unaffected, since none of them depends on prior state.
+/// See the evaluation chapter for the analysis and the fix.
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct StrategyInput {
     pub adapter_id: AdapterId,
@@ -35,6 +44,10 @@ pub fn handler(
     require!(!ctx.accounts.vault.paused, VaultError::VaultPaused);
     require!(!strategies.is_empty(), VaultError::InvalidWeightSum);
 
+    let adapter_ids: Vec<AdapterId> = strategies.iter()
+        .map(|s| s.adapter_id.clone())
+        .collect();
+
     let proposed_weights: Vec<u16> = strategies.iter()
         .map(|s| s.proposed_weight_bps)
         .collect();
@@ -48,9 +61,12 @@ pub fn handler(
         .collect();
 
     // Constraint validation runs atomically before any adapter is called.
-    // If any check fails the entire transaction reverts here.
+    // If any check fails the entire transaction reverts here, so the vault
+    // is left holding the allocation it already had. The monitor rejects;
+    // it never clips or rewrites a proposal into an admissible one.
     validate_proposal(
         &ctx.accounts.vault.constraints,
+        &adapter_ids,
         &proposed_weights,
         &current_weights,
         &target_programs,

@@ -1,0 +1,201 @@
+{
+  "description": "Shared conformance cases for the on-chain constraint layer and its off-chain mirror. Cases in 'both' must produce identical verdicts from validate_proposal in Rust and validate_proposal in Python. The 'rust_only' and 'python_only' sections record proposals one implementation cannot represent, which is a documented consequence of mirroring an enforcement layer in a second language rather than a gap in coverage.",
+  "constraints": {
+    "per_strategy_cap_bps": 6000,
+    "total_cap_bps": 10000,
+    "max_rebalance_delta_bps": 3000
+  },
+  "both": [
+    {
+      "id": "valid_equal_weight",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [5000, 5000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "ok"
+    },
+    {
+      "id": "valid_sitting_exactly_on_the_cap",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [6000, 4000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "ok",
+      "note": "The cap is inclusive. Agent 2 produces corner solutions that land here after rounding."
+    },
+    {
+      "id": "cap_breached_by_one_basis_point",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [6001, 3999],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "strategy_cap_exceeded"
+    },
+    {
+      "id": "cap_breached_on_the_second_leg",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [3000, 7000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "strategy_cap_exceeded",
+      "note": "Agent 1 breaches in this direction; Agents 2 and 3 in the other."
+    },
+    {
+      "id": "weights_sum_under_denominator",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [4500, 4500],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "weights_not_exact"
+    },
+    {
+      "id": "weights_sum_over_denominator",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [6000, 5000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "weights_not_exact",
+      "note": "Sum is checked before the cap, so this is not reported as a cap breach."
+    },
+    {
+      "id": "delta_exceeded",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [5000, 5000],
+      "current": [1000, 9000],
+      "whitelisted": [true, true],
+      "expect": "rebalance_delta_exceeded"
+    },
+    {
+      "id": "delta_exactly_at_the_limit",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [5000, 5000],
+      "current": [2000, 8000],
+      "whitelisted": [true, true],
+      "expect": "ok"
+    },
+    {
+      "id": "cap_and_delta_both_breached_on_the_same_leg",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [6500, 3500],
+      "current": [1000, 9000],
+      "whitelisted": [true, true],
+      "expect": "strategy_cap_exceeded",
+      "note": "Cap and delta share one pass. The cap is tested first within an iteration, so it wins."
+    },
+    {
+      "id": "delta_on_first_leg_cap_on_second",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [1000, 9000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "rebalance_delta_exceeded",
+      "note": "Adapters are visited in enum order, so a delta breach on an earlier leg is reported ahead of a cap breach on a later one."
+    },
+    {
+      "id": "second_adapter_not_whitelisted",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [5000, 5000],
+      "current": [5000, 5000],
+      "whitelisted": [true, false],
+      "expect": "adapter_not_allowed"
+    },
+    {
+      "id": "neither_adapter_whitelisted",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [5000, 5000],
+      "current": [5000, 5000],
+      "whitelisted": [false, false],
+      "expect": "adapter_not_allowed"
+    },
+    {
+      "id": "whitelist_checked_after_the_cap",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [7000, 3000],
+      "current": [5000, 5000],
+      "whitelisted": [false, true],
+      "expect": "strategy_cap_exceeded"
+    },
+    {
+      "id": "zero_weight_leg_is_legal",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [10000, 0],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "constraints": {
+        "per_strategy_cap_bps": 10000,
+        "total_cap_bps": 10000,
+        "max_rebalance_delta_bps": 10000
+      },
+      "expect": "ok",
+      "note": "The unenforced configuration used as the counterfactual arm in the backtest."
+    },
+    {
+      "id": "total_cap_below_denominator_is_unreachable",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [4500, 4500],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "constraints": {
+        "per_strategy_cap_bps": 6000,
+        "total_cap_bps": 9000,
+        "max_rebalance_delta_bps": 3000
+      },
+      "expect": "weights_not_exact",
+      "note": "Exact-sum and a sub-denominator total cap compose into an empty feasible set. No proposal can ever reach the total cap check, which is why total_cap_exceeded appears in neither implementation's reachable behaviour."
+    },
+    {
+      "id": "cap_below_the_feasibility_floor",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [5000, 5000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "constraints": {
+        "per_strategy_cap_bps": 4000,
+        "total_cap_bps": 10000,
+        "max_rebalance_delta_bps": 10000
+      },
+      "expect": "strategy_cap_exceeded",
+      "note": "Two adapters under a 4000 bps cap cannot sum to the denominator. Every proposal is refused, which is a property of the arithmetic rather than of any agent."
+    }
+  ],
+  "rust_only": [
+    {
+      "id": "duplicate_adapter_concentration",
+      "adapters": ["LENDING", "LENDING"],
+      "proposed": [6000, 4000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "duplicate_adapter",
+      "note": "The mirror keys weights by AdapterId in a dict and cannot represent a repeated adapter. Its absence from the backtest is structural: no proposal of this shape could ever have been generated or counted there."
+    },
+    {
+      "id": "duplicate_adapter_under_the_cap",
+      "adapters": ["LENDING", "LENDING"],
+      "proposed": [5000, 5000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "duplicate_adapter",
+      "note": "Refused even though both entries clear the cap, because the property being protected is concentration and not per-entry size."
+    }
+  ],
+  "python_only": [
+    {
+      "id": "negative_weight",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [-1000, 11000],
+      "current": [5000, 5000],
+      "whitelisted": [true, true],
+      "expect": "negative_weight",
+      "note": "On-chain weights are u16 and cannot be negative, so this check has no Rust counterpart. Retained in the mirror as a guard for proposals built outside the pydantic schema."
+    },
+    {
+      "id": "first_rebalance_with_no_prior_position",
+      "adapters": ["LENDING", "LIQUID_STAKING"],
+      "proposed": [6000, 4000],
+      "current": null,
+      "whitelisted": [true, true],
+      "expect": "ok",
+      "note": "The mirror accepts None for the current allocation and skips the delta check. The program has no equivalent and always compares against stored weights, so the two agree only once a position exists."
+    }
+  ]
+}
