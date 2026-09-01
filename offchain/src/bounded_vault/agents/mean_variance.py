@@ -17,6 +17,8 @@ a hand-picked multiplier.
 
 Covariance is estimated from price returns alone, since daily yield accrual
 carries no meaningful variance over a one day horizon.
+
+AI assitance for debugging and documentation was used, but the code itself is original"
 """
 
 from __future__ import annotations

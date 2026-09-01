@@ -18,6 +18,8 @@ agent is a substitute for enforcing it.
 
 Responses are cached to disk keyed by date, configuration, and prompt hash,
 so a backtest is deterministic and reruns cost nothing.
+
+The comments are AI generated. The code is not. Debugging was done with AI"
 """
 
 from __future__ import annotations

@@ -43,6 +43,8 @@ opposite reason: their proposals were produced under a disclosed cap of
 
 Run from offchain/, after scripts/run_backtests.py:
     python scripts/cap_sweep.py
+
+    This is AI Generated. The prompt used to generate this code is: Sweep the cap. Do this first. Vary max_strategy_bps from 10000 down to about 5000 and record, per agent, breach rate and executed performance
 """
 
 from __future__ import annotations

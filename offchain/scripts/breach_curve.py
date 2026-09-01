@@ -18,6 +18,7 @@ pair is swept.
 
 Run from offchain/:
     python scripts/breach_curve.py
+
 """
 
 from __future__ import annotations
@@ -158,9 +159,9 @@ def main() -> None:
 
     plot(curve)
 
+"Prompt used for plotting: Help me plot the graph using matplotlib for the breach curve"
 
 def plot(curve: pd.DataFrame) -> None:
-    """Render the curve, if matplotlib is available."""
     try:
         import matplotlib
 

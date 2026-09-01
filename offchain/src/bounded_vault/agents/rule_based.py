@@ -18,6 +18,8 @@ class RuleBasedAgent(Agent):
     name is overridable so the same agent can be run under more than one
     constraint configuration without the two results colliding on one
     output path. It affects labelling only, never the proposal itself.
+
+    No AI was used to write this agent. AI assistance was used for debugging 
     """
 
     name = "rule_based"

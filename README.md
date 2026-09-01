@@ -280,3 +280,4 @@ dissertation methodology chapter. Separately, AI assistance was used during
 development and drafting; that use is declared in full in the dissertation in
 the form required by the programme handbook. This README is not a substitute for
 that declaration.
+Comments were generated using AI for better understanding the code.
